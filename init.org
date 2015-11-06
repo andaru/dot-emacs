@@ -186,6 +186,25 @@
              pdf-tools            ; Emacs support library for PDF files.
              projectile           ; Manage and navigate projects in Emacs easily
              slime                ; Superior Lisp Interaction Mode for Emacs
+
+             helm-google
+             helm-ls-git
+             helm-go-package
+             helm-flymake
+             helm-flycheck        ; Show flycheck errors with helm
+             flymake-go           ; A flymake handler for go-mode files
+             flycheck             ; On-the-fly syntax checking
+             company-go           ; company-mode backend for Go (using gocode)
+             python-mode
+             go-mode
+             go-eldoc
+             go-autocomplete
+             go-errcheck
+             go-dlv
+             go-direx
+             go-projectile        ; go package integration for projectile
+             magit-gerrit
+
              try))                ; Try out Emacs packages
           ;; Remove all packages already installed
           (packages (remove-if 'package-installed-p packages)))
@@ -209,10 +228,11 @@
    #+BEGIN_SRC emacs-lisp
    (when (memq window-system '(mac ns))
      (setq ns-pop-up-frames nil
-           mac-option-modifier nil
-           mac-command-modifier 'meta
+           mac-option-modifier 'meta
+           mac-command-modifier 'super
            x-select-enable-clipboard t)
-     (exec-path-from-shell-initialize))
+     (exec-path-from-shell-initialize)
+     (exec-path-from-shell-copy-env "GOPATH"))
    #+END_SRC
 
 ** Require
@@ -235,7 +255,10 @@
               ox-latex                 ; the latex-exporter (from org)
               ox-md                    ; Markdown exporter (from org)
               recentf                  ; recently opened files
-              tex-mode))               ; TeX, LaTeX, and SliTeX mode commands
+              tex-mode                 ; TeX, LaTeX, and SliTeX mode commands
+              
+              magit-gerrit
+              flycheck))
      (idle-require feature))
 
    (setq idle-require-idle-delay 5)
@@ -361,7 +384,10 @@
               dirtrack-mode                ; directory tracking in *shell*
               recentf-mode                 ; Recently opened files
               show-paren-mode              ; Highlight matching parentheses
-              projectile-global-mode))     ; Manage and navigate projects
+              projectile-global-mode       ; Manage and navigate projects
+
+              global-flycheck-mode         ; Perform fly code checking
+              ))
      (funcall mode 1))
 
    (when (version< emacs-version "24.4")
@@ -419,6 +445,8 @@
    (safe-diminish "helm-mode" 'helm-mode)
    (safe-diminish "projectile" 'projectile-mode)
    (safe-diminish "paredit" 'paredit-mode "()")
+
+   (safe-diminish "GitGutter" 'git-gutter-mode)
    #+END_SRC
 
    [[https://github.com/syohex/emacs-git-gutter-fringe][git-gutter-fringe]] gives a great visual indication of where you've made
@@ -447,7 +475,7 @@
                                           ("phi" . ?φ)
                                           ("psi" . ?ψ)))
    #+END_SRC
-
+   
 ** PDF Tools
 
    [[https://github.com/politza/pdf-tools][PDF Tools]] makes a huge improvement on the built-in [[http://www.gnu.org/software/emacs/manual/html_node/emacs/Document-View.html][doc-view-mode]]; the only
@@ -554,78 +582,6 @@
          calendar-longitude 10.7
          calendar-location-name "Oslo, Norway")
    #+END_SRC
-
-** mu4e and offlineimap
-
-   I might not be at a computer using my very specific mail-setup, but if my
-   mail-folder exists, then it's probably safe to load.
-
-   #+BEGIN_SRC emacs-lisp
-   (defvar load-mail-setup (file-exists-p "~/.ifimail"))
-   #+END_SRC
-
-   I use [[http://www.djcbsoftware.nl/code/mu/mu4e.html][mu4e]] (which is a part of [[http://www.djcbsoftware.nl/code/mu/][mu]]) along with [[http://docs.offlineimap.org/en/latest/][offlineimap]] on one of my
-   computers.
-
-*** mu4e
-
-    mu4e must be informed where it can find your mail and where the
-    different folders of interest are located. Some additional mu4e-tweaks
-    are supplied here as well.
-
-    ~message-insert-signature~ is an existing Emacs function, that adds your
-    signature prefixed by a ~"-- "~ at the end of the email, which is a
-    convention I don't really follow. I redefine it as a function that adds
-    some newlines and my signature at the top of the email.
-
-    #+BEGIN_SRC emacs-lisp
-    (when load-mail-setup
-      (eval-after-load 'mu4e
-        '(progn
-           ;; Some basic mu4e settings.
-           (setq mu4e-maildir           "~/.ifimail"     ; top-level Maildir
-                 mu4e-sent-folder       "/Sent Items"    ; folder for sent messages
-                 mu4e-drafts-folder     "/INBOX.Drafts"  ; unfinished messages
-                 mu4e-trash-folder      "/INBOX.Trash"   ; trashed messages
-                 mu4e-get-mail-command  "offlineimap"    ; offlineimap to fetch mail
-                 mu4e-compose-signature "- Lars"         ; Sign my name
-                 mu4e-update-interval   (* 5 60)         ; update every 5 min
-                 mu4e-confirm-quit      nil              ; just quit
-                 mu4e-view-show-images  t                ; view images
-                 mu4e-html2text-command
-                 "html2text -utf8")                      ; use utf-8
-
-           ;; Setup for sending mail.
-           (setq user-full-name
-                 "Lars Tveito"                          ; Your full name
-                 user-mail-address
-                 "larstvei@ifi.uio.no"                  ; And email-address
-                 smtpmail-smtp-server
-                 "smtp.uio.no"                          ; Host to mail-server
-                 smtpmail-smtp-service 465              ; Port to mail-server
-                 smtpmail-stream-type 'ssl              ; Protocol used for sending
-                 send-mail-function 'smtpmail-send-it   ; Use smpt to send
-                 mail-user-agent 'mu4e-user-agent)      ; Use mu4e
-
-           ;; Register file types that can be handled by ImageMagick.
-           (when (fboundp 'imagemagick-register-types)
-             (imagemagick-register-types))
-
-           (add-hook 'mu4e-compose-mode-hook
-                     (lambda ()
-                       (auto-fill-mode 0)
-                       (visual-line-mode 1)
-                       (ispell-change-dictionary "norsk")))
-
-           (add-hook 'mu4e-view-mode-hook (lambda () (visual-line-mode 1)))
-
-           (defun message-insert-signature ()
-             (goto-char (point-min))
-             (search-forward-regexp "^$")
-             (insert "\n\n\n" mu4e-compose-signature))))
-
-      (autoload 'mu4e "mu4e" nil t))
-    #+END_SRC
 
 ** Flyspell
 
@@ -865,20 +821,20 @@
    #+BEGIN_SRC emacs-lisp
    (defun global-scale-default ()
      (interactive)
-     (set-face-attribute 'default nil :font "Inconsolata-14"))
+     (set-face-attribute 'default nil :font "Source Code Pro-13"))
 
-   (lexical-let ((size 14))
+   (lexical-let ((size 13))
      (defun global-scale-up ()
        (interactive)
        (set-face-attribute
         'default nil
-        :font (concat "Inconsolata-" (number-to-string (incf size)))))
+        :font (concat "Source Code Pro-" (number-to-string (incf size)))))
 
      (defun global-scale-down ()
        (interactive)
        (set-face-attribute
         'default nil
-        :font (concat "Inconsolata-" (number-to-string (decf size))))))
+        :font (concat "Source Code Pro-" (number-to-string (decf size))))))
    #+END_SRC
 
 * Mode specific
@@ -1152,6 +1108,51 @@
                (local-set-key (kbd "C-c b") 'insert-markdown-inline-math-block)) t)
    #+END_SRC
 
+** Golang
+
+   Golang programming mode makes for a powerful Go environment, with live
+   compilation and error checking, inline code completion with function
+   envelope hinting, dynamic code inspection (via the go-oracle) and coverage
+   support.
+
+   #+BEGIN_SRC emacs-lisp
+   (add-to-list 'auto-mode-alist '("\\.go\\'" . go-mode))
+
+   (defun user/go-mode-hook ()
+     "User gomode setup"
+
+     (set (make-local-variable 'company-backends) '(company-go))
+     (setq compile-command "go build && go test -v -cover")
+     (setq gofmt-command "goimports")
+     ;; auto-fill settings
+     (setq-default fill-column 100
+                   truncate-lines t
+                   indent-tabs-mode t
+                   auto-fill-function nil)
+
+     (linum-mode 1)
+     (add-hook 'before-save-hook 'gofmt-before-save))
+
+   (eval-after-load 'go-mode
+     '(substitute-key-definition 'go-import-add 'helm-go-package go-mode-map))
+
+   (add-hook 'go-mode-hook 'user/go-mode-hook)
+
+   #+END_SRC
+
+   # [[http://tkf.github.io/emacs-jedi/released/][Jedi]] offers very nice auto completion for =python-mode=. Mind that it is
+   # dependent on some python programs as well, so make sure you follow the
+   # instructions from the site.
+
+   # #+BEGIN_SRC emacs-lisp
+   # ;; (setq jedi:server-command
+   # ;;       (cons "python3" (cdr jedi:server-command))
+   # ;;       python-shell-interpreter "python3")
+   # (add-hook 'python-mode-hook 'jedi:setup)
+   # (setq jedi:complete-on-dot t)
+   # (add-hook 'python-mode-hook 'jedi:ac-setup)
+   # #+END_SRC
+
 ** Python
 
    # [[http://tkf.github.io/emacs-jedi/released/][Jedi]] offers very nice auto completion for =python-mode=. Mind that it is
@@ -1253,6 +1254,7 @@
   (define-key custom-bindings-map (kbd "C-c h")   'helm-command-prefix)
   (define-key custom-bindings-map (kbd "M-x")     'helm-M-x)
   (define-key custom-bindings-map (kbd "M-y")     'helm-show-kill-ring)
+  (define-key custom-bindings-map (kbd "M-k")     'helm-mini) ;; no killies!
   (define-key custom-bindings-map (kbd "C-x b")   'helm-mini)
   (define-key custom-bindings-map (kbd "C-x C-f") 'helm-find-files)
   (define-key custom-bindings-map (kbd "C-c h o") 'helm-occur)
@@ -1278,7 +1280,7 @@
   (define-key custom-bindings-map (kbd "C-j")      'newline-and-indent)
   (define-key custom-bindings-map (kbd "C-c s")    'ispell-word)
   (define-key custom-bindings-map (kbd "C-c c")    'org-capture)
-  (define-key custom-bindings-map (kbd "C-x m")    'mu4e)
+  ;; (define-key custom-bindings-map (kbd "C-x m")    'mu4e)
   (define-key custom-bindings-map (kbd "C-c t")
     (lambda () (interactive) (org-agenda nil "n")))
   #+END_SRC
@@ -1286,8 +1288,8 @@
   Bind the functions defined [[sec:defuns][above]].
 
   #+BEGIN_SRC emacs-lisp
-  (define-key global-map          (kbd "M-p")     'jump-to-previous-like-this)
-  (define-key global-map          (kbd "M-n")     'jump-to-next-like-this)
+  (define-key global-map          (kbd "M-p")     'backward-paragraph)
+  (define-key global-map          (kbd "M-n")     'forward-paragraph)
   (define-key custom-bindings-map (kbd "M-,")     'jump-to-previous-like-this)
   (define-key custom-bindings-map (kbd "M-.")     'jump-to-next-like-this)
   (define-key custom-bindings-map (kbd "C-c .")   (cycle-themes))
@@ -1300,6 +1302,18 @@
   (define-key custom-bindings-map (kbd "C-c d")   'duplicate-thing)
   (define-key custom-bindings-map (kbd "<C-tab>") 'tidy)
   #+END_SRC
+
+  #+BEGIN_SRC emacs-lisp
+  (define-key custom-bindings-map (kbd "M-o") 'other-window)
+  (define-key custom-bindings-map (kbd "M-O") (kbd "C-u -1 M-o"))
+  (define-key custom-bindings-map (kbd "M-2") 'split-window-below)
+  (define-key custom-bindings-map (kbd "M-3") 'split-window-right)
+  (define-key custom-bindings-map (kbd "M-0") 'delete-window)
+  (define-key custom-bindings-map (kbd "s-z") 'undo)
+  (define-key custom-bindings-map (kbd "s-s") 'save-buffer)
+  (define-key custom-bindings-map (kbd "s-w") 'kill-this-buffer-unless-scratch)
+  #+END_SRC
+
 
   Lastly we need to activate the map by creating and activating the
   =minor-mode=.
